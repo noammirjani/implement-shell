@@ -1,49 +1,82 @@
 #include "Shell.h"
 
+/**
+ * Run the shell application.
+ */
 void Shell::run() {
     std::string line;
 
     while (true) {
         try {
-            char* cwd = (char*)malloc(sizeof(char) * 1024);
-            std::cout <<  getcwd(cwd, 1024) << "~$ ";
+            prompt();
             std::getline(std::cin, line);
             if (line == "exit")break;
             execute(line);
-            free (cwd);
-        } catch (const std::invalid_argument& e) {
+        }
+        catch (const std::invalid_argument& e) {
             std::cout << e.what() << std::endl;
-        } catch (const std::exception& e) {
+        }
+        catch (const std::exception& e) {
             perror(e.what());
             break;
         }
     }
 }
 
+/** Display the shell prompt.*/
+void Shell::prompt() const {
+    char cwd[1024];
+    std::cout <<  getcwd(cwd, 1024) << "~$ ";
+}
+
+/**
+ * Parse the command line input.
+ *
+ * @param line The command line input.
+ * @return The parsed command data.
+ */
 CmdData Shell::parse(const std::string& line) {
     CmdData data;
-    std::string arg;
     std::istringstream iss(line);
 
     iss >> data.command;
 
+    std::string arg;
     while (iss >> arg) {
         data.args.push_back(arg);
     }
 
-    data.isBackground = line[line.length() - 1] == '&';
+    data.isBackground = !data.args.empty() && data.args.back().ends_with("&");
     if(data.isBackground){
-        // remove the & from the last arg
-        int lastIndex = data.args.size() - 1;
-        if(data.args[lastIndex].length() > 1) {
-            data.args[lastIndex] = data.args[lastIndex].substr(0, data.args[lastIndex].length() - 1);
-        }else
-            data.args.pop_back();
+        removeBgSign(data);
     }
-
     return data;
 }
 
+
+/**
+ * Remove the background sign from the command data.
+ * @param data The command data.
+ */
+void Shell::removeBgSign(CmdData& data) {
+
+    std::string lastArg = data.args.back();
+    if(lastArg == "&"){
+        // remove the last arg
+        data.args.pop_back();
+    }
+    else {
+        // remove the & from the last arg
+        lastArg.pop_back();
+    }
+}
+
+
+/**
+ * Set the arguments for executing a command.
+ * @param data The command data.
+ * @return The arguments for execution.
+ */
 std::vector<char*> Shell::setExecArgs(const CmdData& data) {
     std::vector<char*> args;
     args.push_back(const_cast<char*>(data.command.c_str()));
@@ -54,17 +87,22 @@ std::vector<char*> Shell::setExecArgs(const CmdData& data) {
     return args;
 }
 
+
+/**
+ * Change the current directory.
+ * @param data The command data containing the directory argument.
+ */
 void Shell::cd(const CmdData& data) {
     // change directory - no need of fork
-    if(data.args.size() == 0)
+    if(data.args.empty())
         throw std::invalid_argument("cd: missing argument");
     if(chdir(data.args[0].c_str()) == -1)
         throw std::invalid_argument("cd: failed to change directory");
 }
 
-void Shell::myJobs() {
 
-    std::cout << m_bgProcesses.size() << std::endl;
+/** Display information about background processes. */
+void Shell::myJobs() {
     if(m_bgProcesses.empty()){
         std::cout << "No background processes" << std::endl;
         return;
@@ -81,45 +119,58 @@ void Shell::myJobs() {
     }
 }
 
-
-
+/**
+ * Execute a command.
+ * @param line The command line input.
+ */
 void Shell::execute(const std::string& line) {
     CmdData data = parse(line);
 
     if(data.command == "exit"){
         return;
     }
-
     if(data.command == "cd"){
         cd(data);
         return;
     }
-
     if(data.command == "myJobs"){
         myJobs();
         return;
     }
+    doFork(data, line);
+}
+
+/**
+ * Fork a new process and execute the command.
+ *
+ * @param data The command data.
+ * @param line The command line input.
+ */
+void Shell::doFork(CmdData& data, const std::string& line){
 
     pid_t c_pid = fork();
     if (c_pid == -1) {
         throw std::runtime_error("fork failed");
-    } else if (c_pid == 0) { // child process
-        if(data.isBackground) {
-            std::cout << m_bgProcesses.size() << std::endl;
-        }
+    }
+    else if (c_pid == 0) {          // child process
         std::string command = findCommand(data.command);
         std::vector<char*> args = setExecArgs(data);
         execvp(command.c_str(), args.data());
         throw std::runtime_error("execvp failed");
-    } else { // parent process
+    }
+    else {                      // parent process
         if(!data.isBackground)
             wait(nullptr);
-        else
-            m_bgProcesses.push_back(std::make_pair(c_pid, line));
+        else m_bgProcesses.emplace_back(c_pid, line);
     }
 }
 
 
+/**
+ * Find the command executable in the PATH environment variable.
+ * @param command The command name.
+ * @return The full path of the command.
+ */
 std::string Shell::findCommand(const std::string& command) const {
     std::string commandPath;
 
@@ -145,6 +196,11 @@ std::string Shell::findCommand(const std::string& command) const {
     throw std::invalid_argument("command not found");
 }
 
+/**
+ * Check if the command is executable.
+ * @param command The command name.
+ * @return True if the command is executable, false otherwise.
+ */
 bool Shell::checkAccess(const std::string& command) {
     return access(command.c_str(), X_OK) != -1;
 }
