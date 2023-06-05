@@ -1,5 +1,13 @@
 #include "Shell.h"
 
+Shell::Shell(){
+    m_historyFile.open(filePath, std::ios::in | std::ios::out | std::ios::trunc);
+}
+
+Shell::~Shell() {
+    m_historyFile.close();
+}
+
 /**
  * Run the shell application.
  */
@@ -10,13 +18,15 @@ void Shell::run() {
         try {
             prompt();
             std::getline(std::cin, line);
-            if (line == "exit")break;
-            execute(line);
+            CmdData data = parse(line);
+            if(data.command == "exit")break;
+            execute(line, data);
         }
         catch (const std::invalid_argument& e) {
             std::cout << e.what() << std::endl;
         }
         catch (const std::exception& e) {
+            // critical error
             perror(e.what());
             break;
         }
@@ -25,8 +35,8 @@ void Shell::run() {
 
 /** Display the shell prompt.*/
 void Shell::prompt() const {
-    char cwd[1024];
-    std::cout <<  getcwd(cwd, 1024) << "~$ ";
+    char cwd[PATH_MAX];
+    std::cout <<  getcwd(cwd, PATH_MAX) << "~$ ";
 }
 
 /**
@@ -123,21 +133,58 @@ void Shell::myJobs() {
  * Execute a command.
  * @param line The command line input.
  */
-void Shell::execute(const std::string& line) {
-    CmdData data = parse(line);
-
+void Shell::execute(const std::string& line, CmdData& data) {
+    if(data.command.empty()) {
+        return;
+    }
     if(data.command == "exit"){
         return;
     }
+    if(data.command == "myhistory") {
+        displayHistory();
+        return;
+    }
+    if(data.command == "myjobs"){
+        myJobs();
+        return;
+    }
+
+    checkArgsAsEnvVar(data);
+
     if(data.command == "cd"){
         cd(data);
         return;
     }
-    if(data.command == "myJobs"){
-        myJobs();
-        return;
-    }
     doFork(data, line);
+    addToHistory(line);
+}
+
+
+/**
+ * Add a command to the history.
+ * @param line The command line input.
+ */
+void Shell::checkArgsAsEnvVar(CmdData& data) {
+    for (auto arg = data.args.begin(); arg != data.args.end(); ++arg) {
+        if (arg->starts_with("${") && arg->ends_with("}")) {
+            std::string var = arg->substr(2, arg->size() - 3);
+            updateArgIfEnvVarExists(arg, var);
+        } else if (arg->starts_with("$")) {
+            updateArgIfEnvVarExists(arg, arg->substr(1));
+        }
+    }
+}
+
+
+/**
+ * Add a command to the history.
+ * @param line The command line input.
+ */
+void Shell::updateArgIfEnvVarExists(std::vector<std::string>::iterator arg, const std::string& var) {
+    char *value = getenv(var.c_str());
+    if (value != nullptr) {
+        *arg = value;
+    }
 }
 
 /**
@@ -147,7 +194,6 @@ void Shell::execute(const std::string& line) {
  * @param line The command line input.
  */
 void Shell::doFork(CmdData& data, const std::string& line){
-
     pid_t c_pid = fork();
     if (c_pid == -1) {
         throw std::runtime_error("fork failed");
@@ -203,4 +249,34 @@ std::string Shell::findCommand(const std::string& command) const {
  */
 bool Shell::checkAccess(const std::string& command) {
     return access(command.c_str(), X_OK) != -1;
+}
+
+/**
+ * Display the history of commands.
+ */
+void Shell::displayHistory() {
+    if (m_historyFile.is_open()) {
+        m_historyFile.seekg(0, std::ios::beg);
+        std::string line;
+        while (std::getline(m_historyFile, line)) {
+            std::cout << line << std::endl;
+        }
+        m_historyFile.clear();
+    } else {
+        throw std::runtime_error("File is not open.");
+    }
+}
+
+
+/**
+ * Add a command to the history file.
+ * @param data The command data.
+ */
+void Shell::addToHistory(const std::string& userCmd) {
+
+    if (m_historyFile.is_open()) {
+        m_historyFile << userCmd << std::endl;
+    } else {
+        throw std::runtime_error("File is not open.");
+    }
 }
