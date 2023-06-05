@@ -1,7 +1,7 @@
-#include <iostream>
+#include "Shell.h"
 
-
-int main(){
-    std::cout << "Hello World!" << std::endl;
+int main() {
+    Shell shell;
+    shell.run();
     return 0;
 }

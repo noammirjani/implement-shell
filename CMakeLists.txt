@@ -14,7 +14,7 @@ if (MSVC)
     add_compile_options (/W4 /permissive- /Zc:externConstexpr /Zc:inline)
 endif ()
 
-add_executable(implement-shell-noammirjani "")
+add_executable(implement-shell-noammirjani "" include/Shell.h src/Shell.cpp)
 
 add_subdirectory (include)
 add_subdirectory (src)
