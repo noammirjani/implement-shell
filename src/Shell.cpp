@@ -33,6 +33,31 @@ void Shell::run() {
     }
 }
 
+/**
+ * Execute a command.
+ * @param line The command line input.
+ */
+void Shell::execute(const std::string& line, CmdData& data) {
+    if(data.command.empty() || data.command == "exit")
+        return;
+
+    else if(data.command == "myhistory")
+        displayHistory();
+
+    else if(data.command == "myjobs")
+        myJobs();
+
+    else{
+        checkArgsAsEnvVar(data);
+        if(data.command == "cd")      // change directory - no need of fork
+            cd(data);
+        else doFork(data, line);
+    }
+
+    addToHistory(line);
+}
+
+
 /** Display the shell prompt.*/
 void Shell::prompt() const {
     char cwd[PATH_MAX];
@@ -70,16 +95,16 @@ CmdData Shell::parse(const std::string& line) {
  */
 void Shell::removeBgSign(CmdData& data) {
 
-    std::string lastArg = data.args.back();
-    if(lastArg == "&"){
+    if(data.args.back() == "&"){
         // remove the last arg
         data.args.pop_back();
     }
     else {
         // remove the & from the last arg
-        lastArg.pop_back();
+        data.args.back().pop_back();
     }
 }
+
 
 
 /**
@@ -113,51 +138,25 @@ void Shell::cd(const CmdData& data) {
 
 /** Display information about background processes. */
 void Shell::myJobs() {
-    if(m_bgProcesses.empty()){
-        std::cout << "No background processes" << std::endl;
-        return;
-    }
 
-    for (auto it = m_bgProcesses.begin(); it != m_bgProcesses.end();  ++it) {
+    // check if any background process has finished
+    for (auto it = m_bgProcesses.begin(); it != m_bgProcesses.end();) {
         pid_t pid = it->first;
         int status;
         if (waitpid(pid, &status, WNOHANG) == pid) {
-            m_bgProcesses.erase(it);
+            m_bgProcesses.erase(it); //erase returns the next iterator
         } else {
-            std::cout << "pid: " << pid << " cmd: " << it->second << " status: " << status << std::endl;
+            std::cout << "pid: " << pid << " || cmd: " << it->second << " || status: " << WEXITSTATUS(status)  << "running" << std::endl;
+            ++it;
         }
     }
+
+    // if all the processes have finished the vector is empty - print message
+    if(m_bgProcesses.empty()) {
+        std::cout << "No background processes" << std::endl;
+    }
 }
 
-/**
- * Execute a command.
- * @param line The command line input.
- */
-void Shell::execute(const std::string& line, CmdData& data) {
-    if(data.command.empty()) {
-        return;
-    }
-    if(data.command == "exit"){
-        return;
-    }
-    if(data.command == "myhistory") {
-        displayHistory();
-        return;
-    }
-    if(data.command == "myjobs"){
-        myJobs();
-        return;
-    }
-
-    checkArgsAsEnvVar(data);
-
-    if(data.command == "cd"){
-        cd(data);
-        return;
-    }
-    doFork(data, line);
-    addToHistory(line);
-}
 
 
 /**
