@@ -7,28 +7,38 @@ InputParser& InputParser::getInstance() {
 
 CmdData InputParser::parse(const std::string& line) {
     CmdData data;
-    std::istringstream iss(line);
+    m_iss.clear();
+    m_iss.str(line);
 
-    iss >> data.command;
+    m_iss >> data.command;
 
     std::string arg;
-    while (iss >> arg) {
-        data.args.push_back(arg);
+    while (m_iss >> arg) {
+        if (arg == ">") {
+            redirectOut();
+        } else if (arg == "<") {
+            redirectIn();
+        } else if (arg == "|") {
+            redirectPipe();
+        }
+        else {
+            data.args.push_back(arg);
+        }
     }
 
     data.isBackground = !data.args.empty() && data.args.back().ends_with("&");
-    if(data.isBackground){
+    if (data.isBackground) {
         removeBgSign(data);
     }
+
     return data;
 }
 
 void InputParser::removeBgSign(CmdData& data) {
-    if(data.args.back() == "&"){
+    if (data.args.back() == "&") {
         // remove the last arg
         data.args.pop_back();
-    }
-    else {
+    } else {
         // remove the & from the last arg
         data.args.back().pop_back();
     }
@@ -56,8 +66,62 @@ void InputParser::checkArgsAsEnvVar(CmdData& data) {
 }
 
 void InputParser::updateArgIfEnvVarExists(std::vector<std::string>::iterator arg, const std::string& var) {
-    char *value = getenv(var.c_str());
+    char* value = getenv(var.c_str());
     if (value != nullptr) {
         *arg = value;
     }
+}
+
+void InputParser::redirectIn() {
+    int originalStdin = dup(STDIN_FILENO);
+
+    std::string inputFileName;
+    if (!(m_iss >> inputFileName)) {
+        throw std::runtime_error("Missing input file name after '<'");
+    }
+
+    int fd = open(inputFileName.c_str(), O_RDONLY);
+    if (fd == -1) {
+        throw std::runtime_error("Failed to open input file");
+    }
+    if (dup2(fd, STDIN_FILENO) == -1) {
+        throw std::runtime_error("Failed to redirect input");
+    }
+    if (close(fd) == -1) {
+        throw std::runtime_error("Failed to close input file");
+    }
+
+    m_fds_changes.push_back({originalStdin, fd});
+}
+
+void InputParser::redirectOut() {
+    int originalStdout = dup(STDOUT_FILENO);
+
+    std::string outputFileName;
+    if (!(m_iss >> outputFileName)) {
+        throw std::invalid_argument("Missing output file name after '>'");
+    }
+
+    int fd = open(outputFileName.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd == -1) {
+        throw std::runtime_error("Failed to open output file");
+    }
+    if (dup2(fd, STDOUT_FILENO) == -1) {
+        throw std::runtime_error("Failed to redirect output");
+    }
+
+    m_fds_changes.push_back({originalStdout, fd});
+}
+
+
+void InputParser::initFD() {
+    for (const auto& [originalFd, newFd] : m_fds_changes) {
+        if (dup2(originalFd, newFd) == -1) {
+            throw std::runtime_error("Failed to restore fd");
+        }
+        if (close(newFd) == -1) {
+            throw std::runtime_error("Failed to close fd");
+        }
+    }
+    m_fds_changes.clear();
 }

@@ -1,9 +1,13 @@
 #pragma once
-
+#include <cstdio>
+#include <cstdlib>
+#include <unistd.h>
+#include <fcntl.h>
 #include <iostream>
 #include <string>
 #include <sstream>
 #include <vector>
+#include <fstream>
 
 struct CmdData {
     std::string command;
@@ -19,11 +23,18 @@ public:
     void updateArgIfEnvVarExists(std::vector<std::string>::iterator, const std::string&);
     void checkArgsAsEnvVar(CmdData&);
     CmdData parse(const std::string&);
+    void initFD();
 
 private:
+    std::istringstream m_iss;
+    std::vector<std::pair<int, int>> m_fds_changes;
+
+
     InputParser() = default;
     InputParser(const InputParser&) = delete;
     InputParser& operator=(const InputParser&) = delete;
 
     void removeBgSign(CmdData&);
+    void redirectIn();
+    void redirectOut();
 };

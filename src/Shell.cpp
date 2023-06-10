@@ -11,6 +11,7 @@ void Shell::run() {
             if(data.command == "exit")
                 break;
             execute(line, data);
+            InputParser::getInstance().initFD();
         }
         catch (const std::invalid_argument& e) {
             std::cout << e.what() << std::endl;
