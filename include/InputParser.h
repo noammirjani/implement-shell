@@ -22,7 +22,7 @@ public:
     std::vector<char*> setExecArgs(const CmdData&);
     void updateArgIfEnvVarExists(std::vector<std::string>::iterator, const std::string&);
     void checkArgsAsEnvVar(CmdData&);
-    CmdData parse(const std::string&);
+    std::vector<CmdData> parse(const std::string&);
     void initFD();
 
 private:
@@ -35,6 +35,6 @@ private:
     InputParser& operator=(const InputParser&) = delete;
 
     void removeBgSign(CmdData&);
-    void redirectIn();
-    void redirectOut();
+    void redirect(unsigned int, int);
+    CmdData getCmdData();
 };

@@ -18,14 +18,20 @@ public:
     void run();
 
 private:
-    void prompt() const;
-    void execute(const std::string&, CmdData&);
-    std::string findCommand(const std::string&) const;
-    static bool checkAccess(const std::string&);
-    void doFork(CmdData&, const std::string&);
-    void cd(const CmdData&);
-    void checkArgsAsEnvVar(CmdData&);
-
     MyCommands myCommands;
-};
 
+    void prompt() const;
+    //commands handler
+    static std::string findCommand(const std::string&);
+    static bool checkAccess(const std::string&);
+    static void cd(const CmdData&);
+    //pipes
+    void executePipe(std::vector<CmdData>&);
+    static void closePipes(std::vector<int>&);
+    // Added function declarations
+    static void executeChild(CmdData&);
+
+    // regular execute
+    void doFork(CmdData&, const std::string&);
+    void execute(const std::string&, CmdData&);
+};

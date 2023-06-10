@@ -5,21 +5,40 @@ InputParser& InputParser::getInstance() {
     return instance;
 }
 
-CmdData InputParser::parse(const std::string& line) {
-    CmdData data;
+/**
+ * @brief Parses the input line and returns a vector of CmdData objects
+ *
+ * @param line The input line
+ * @return std::vector<CmdData>
+ */
+std::vector<CmdData> InputParser::parse(const std::string& line) {
+    std::vector<CmdData> commands;
     m_iss.clear();
     m_iss.str(line);
 
+    while (!m_iss.eof()) {
+        commands.push_back(getCmdData());
+    }
+
+    return commands;
+}
+
+/**
+ * @brief Returns a CmdData object
+ *
+ * @return CmdData
+ */
+CmdData InputParser::getCmdData() {
+
+    CmdData data;
     m_iss >> data.command;
 
     std::string arg;
-    while (m_iss >> arg) {
+    while (m_iss >> arg && arg != "|") {
         if (arg == ">") {
-            redirectOut();
+           redirect(STDOUT_FILENO, O_WRONLY | O_CREAT | O_TRUNC);
         } else if (arg == "<") {
-            redirectIn();
-        } else if (arg == "|") {
-            redirectPipe();
+            redirect(STDIN_FILENO, O_RDONLY);
         }
         else {
             data.args.push_back(arg);
@@ -34,6 +53,11 @@ CmdData InputParser::parse(const std::string& line) {
     return data;
 }
 
+/**
+ * @brief Removes the & sign from the last argument
+ *
+ * @param data The CmdData object
+ */
 void InputParser::removeBgSign(CmdData& data) {
     if (data.args.back() == "&") {
         // remove the last arg
@@ -44,6 +68,13 @@ void InputParser::removeBgSign(CmdData& data) {
     }
 }
 
+
+/**
+ * @brief Returns a vector of char* to be passed to execvp
+ *
+ * @param data The CmdData object
+ * @return std::vector<char*>
+ */
 std::vector<char*> InputParser::setExecArgs(const CmdData& data) {
     std::vector<char*> args;
     args.push_back(const_cast<char*>(data.command.c_str()));
@@ -54,6 +85,12 @@ std::vector<char*> InputParser::setExecArgs(const CmdData& data) {
     return args;
 }
 
+
+/**
+ * @brief Checks if any of the arguments is an environment variable
+ *
+ * @param data The CmdData object
+ */
 void InputParser::checkArgsAsEnvVar(CmdData& data) {
     for (auto arg = data.args.begin(); arg != data.args.end(); ++arg) {
         if (arg->starts_with("${") && arg->ends_with("}")) {
@@ -65,6 +102,13 @@ void InputParser::checkArgsAsEnvVar(CmdData& data) {
     }
 }
 
+
+/**
+ * @brief Updates the argument if the environment variable exists
+ *
+ * @param arg The argument
+ * @param var The environment variable
+ */
 void InputParser::updateArgIfEnvVarExists(std::vector<std::string>::iterator arg, const std::string& var) {
     char* value = getenv(var.c_str());
     if (value != nullptr) {
@@ -72,54 +116,47 @@ void InputParser::updateArgIfEnvVarExists(std::vector<std::string>::iterator arg
     }
 }
 
-void InputParser::redirectIn() {
-    int originalStdin = dup(STDIN_FILENO);
-
-    std::string inputFileName;
-    if (!(m_iss >> inputFileName)) {
-        throw std::runtime_error("Missing input file name after '<'");
+/**
+ * @brief Redirects the standard input or output to a file
+ *
+ * @param stdFd The standard input or output file descriptor
+ * @param fMode The file mode
+ */
+void InputParser::redirect(unsigned int stdFd, int fMode) {
+    int originalFd = dup(stdFd);
+    if (originalFd == -1) {
+        throw std::runtime_error("Failed to duplicate file descriptor");
+    }
+    std::string fName;
+    if (!(m_iss >> fName)) {
+        throw std::invalid_argument("Missing file name");
     }
 
-    int fd = open(inputFileName.c_str(), O_RDONLY);
+    int fd = open(fName.c_str(), fMode, 0666);
     if (fd == -1) {
-        throw std::runtime_error("Failed to open input file");
+        throw std::invalid_argument("Failed to open file" + fName);
     }
-    if (dup2(fd, STDIN_FILENO) == -1) {
-        throw std::runtime_error("Failed to redirect input");
+    if (dup2(fd, stdFd) == -1) {
+        throw std::runtime_error("Failed to redirect file");
     }
     if (close(fd) == -1) {
-        throw std::runtime_error("Failed to close input file");
+        throw std::runtime_error("Failed to close file");
     }
 
-    m_fds_changes.push_back({originalStdin, fd});
-}
-
-void InputParser::redirectOut() {
-    int originalStdout = dup(STDOUT_FILENO);
-
-    std::string outputFileName;
-    if (!(m_iss >> outputFileName)) {
-        throw std::invalid_argument("Missing output file name after '>'");
-    }
-
-    int fd = open(outputFileName.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    if (fd == -1) {
-        throw std::runtime_error("Failed to open output file");
-    }
-    if (dup2(fd, STDOUT_FILENO) == -1) {
-        throw std::runtime_error("Failed to redirect output");
-    }
-
-    m_fds_changes.push_back({originalStdout, fd});
+    // Save the original and redirected file descriptors for restoration
+    m_fds_changes.push_back({originalFd, stdFd});
 }
 
 
+/**
+ * @brief Restores the standard input and output file descriptors
+ */
 void InputParser::initFD() {
-    for (const auto& [originalFd, newFd] : m_fds_changes) {
-        if (dup2(originalFd, newFd) == -1) {
+    for (const auto& pair : m_fds_changes) {
+        if (dup2(pair.first, pair.second) == -1) {
             throw std::runtime_error("Failed to restore fd");
         }
-        if (close(newFd) == -1) {
+        if (close(pair.first) == -1) {
             throw std::runtime_error("Failed to close fd");
         }
     }

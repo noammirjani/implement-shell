@@ -8,6 +8,10 @@ MyCommands::~MyCommands() {
     m_historyFile.close();
 }
 
+/**
+ * @brief Executes the command given by the user.
+ * @param userCmd The command given by the user.
+ */
 void MyCommands::myHistory() {
     if (m_historyFile.is_open()) {
         m_historyFile.seekg(0, std::ios::beg);
@@ -21,6 +25,11 @@ void MyCommands::myHistory() {
     }
 }
 
+
+/**
+ * @brief Adds the command given by the user to the history file.
+ * @param userCmd The command given by the user.
+ */
 void MyCommands::addToHistory(const std::string& userCmd) {
     if (m_historyFile.is_open()) {
         m_historyFile << userCmd << std::endl;
@@ -29,6 +38,11 @@ void MyCommands::addToHistory(const std::string& userCmd) {
     }
 }
 
+
+/**
+ * @brief Executes the command given by the user.
+ * @param userCmd The command given by the user.
+ */
 void MyCommands::myJobs() {
     for (auto it = m_bgProcesses.begin(); it != m_bgProcesses.end();) {
         pid_t pid = it->first;
